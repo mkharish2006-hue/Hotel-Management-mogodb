@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="HotelHub — Modern Hotel Management Dashboard with room management, bookings, analytics, and more.">
+    <title>HotelHub — Dashboard</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🏨</text></svg>">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    <!-- jsPDF for receipt download -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<!-- App root with role data -->
+<div id="appRoot" data-role="{{ role }}" data-user="{{ username }}">
+
+    <!-- ═══ TOASTS ═══ -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <!-- ═══ LOADING ═══ -->
+    <div id="loadingOverlay" class="loading-overlay"><div class="spinner"></div></div>
+
+    <!-- ═══ MOBILE MENU ═══ -->
+    <button class="mobile-menu-btn" onclick="toggleSidebar()" id="mobileMenuBtn">☰</button>
+
+    <div class="app-layout">
+
+        <!-- ═══════════════════════ SIDEBAR ═══════════════════════ -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-brand">
+                <div class="brand-icon">🏨</div>
+                <div class="brand-text">
+                    <h1>HotelHub</h1>
+                    <span class="brand-sub">Management Suite</span>
+                </div>
+            </div>
+
+            <!-- User Badge -->
+            <div class="user-badge">
+                <div class="avatar">{{ username[0]|upper }}</div>
+                <div class="user-info">
+                    <div class="name">{{ username }}</div>
+                    <div class="role-tag">{{ role }}</div>
+                </div>
+            </div>
+
+            <div class="nav-section-label">Menu</div>
+
+            <ul class="nav-items">
+                <!-- Dashboard — Admin only -->
+                {% if role == 'admin' %}
+                <li class="nav-item active" data-page="dashboard" onclick="navigateTo('dashboard')" id="navDashboard">
+                    <span class="nav-icon">📊</span><span>Dashboard</span>
+                </li>
+                {% endif %}
+
+                <!-- Rooms -->
+                <li class="nav-item {% if role != 'admin' %}active{% endif %}" data-page="rooms" onclick="navigateTo('rooms')" id="navRooms">
+                    <span class="nav-icon">🛏️</span><span>Rooms</span>
+                </li>
+
+                <!-- Bookings -->
+                <li class="nav-item" data-page="bookings" onclick="navigateTo('bookings')" id="navBookings">
+                    <span class="nav-icon">📋</span><span>Bookings</span>
+                </li>
+
+                <!-- History -->
+                <li class="nav-item" data-page="history" onclick="navigateTo('history')" id="navHistory">
+                    <span class="nav-icon">📜</span><span>History</span>
+                </li>
+
+                {% if role == 'admin' %}
+                <!-- Analytics — Admin only -->
+                <li class="nav-item" data-page="analytics" onclick="navigateTo('analytics')" id="navAnalytics">
+                    <span class="nav-icon">📈</span><span>Analytics</span>
+                </li>
+                {% endif %}
+
+                <div class="nav-divider"></div>
+
+                <!-- Logout -->
+                <li class="nav-item" onclick="logout()" id="navLogout">
+                    <span class="nav-icon">🚪</span><span>Logout</span>
+                </li>
+            </ul>
+
+            <div class="sidebar-footer">
+                <button class="theme-btn" id="themeBtn" onclick="toggleTheme()">☀️ Light Mode</button>
+                {% if role == 'admin' %}
+                <button class="seed-btn" onclick="seedData()" id="seedDataBtn">🌱 Load Sample Data</button>
+                {% endif %}
+            </div>
+        </aside>
+
+        <!-- ═══════════════════════ MAIN CONTENT ═══════════════════════ -->
+        <main class="main-content">
+
+            <div class="page-header">
+                <h2 id="pageTitle">
+                    {% if role == 'admin' %}📊 Dashboard{% else %}🛏️ Room Management{% endif %}
+                </h2>
+                <p id="pageDesc">
+                    {% if role == 'admin' %}Overview of your hotel operations{% else %}View available rooms{% endif %}
+                </p>
+            </div>
+
+            <!-- ╔═══════════════════════════════════════════╗ -->
+            <!-- ║  PAGE: DASHBOARD (Admin)                  ║ -->
+            <!-- ╚═══════════════════════════════════════════╝ -->
+            {% if role == 'admin' %}
+            <section id="page-dashboard" class="page-section active">
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-icon icon-total">🏢</div>
+                        <div class="stat-value" id="statTotal">0</div>
+                        <div class="stat-label">Total Rooms</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon icon-avail">✅</div>
+                        <div class="stat-value" id="statAvailable">0</div>
+                        <div class="stat-label">Available</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon icon-booked">📌</div>
+                        <div class="stat-value" id="statBooked">0</div>
+                        <div class="stat-label">Booked</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon icon-maint">🔧</div>
+                        <div class="stat-value" id="statMaint">0</div>
+                        <div class="stat-label">Maintenance</div>
+                    </div>
+                </div>
+
+                <div class="glass-card">
+                    <div class="card-title"><span class="title-icon">📋</span> Recent Bookings</div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Guest</th>
+                                    <th>Room</th>
+                                    <th>Type</th>
+                                    <th>Check In</th>
+                                    <th>Check Out</th>
+                                </tr>
+                            </thead>
+                            <tbody id="recentBookingsBody">
+                                <tr><td colspan="5" class="text-center" style="padding:36px;color:var(--text-muted)">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+            {% endif %}
+
+
+            <!-- ╔═══════════════════════════════════════════╗ -->
+            <!-- ║  PAGE: ROOMS                              ║ -->
+            <!-- ╚═══════════════════════════════════════════╝ -->
+            <section id="page-rooms" class="page-section {% if role != 'admin' %}active{% endif %}">
+
+                <!-- Add Room (Admin only) -->
+                {% if role == 'admin' %}
+                <div class="glass-card mb-24">
+                    <div class="card-title"><span class="title-icon">➕</span> Add New Room</div>
+                    <form id="addRoomForm" onsubmit="addRoom(event)">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="roomNo">Room Number</label>
+                                <input type="text" id="roomNo" placeholder="e.g. 101" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="roomType">Room Type</label>
+                                <select id="roomType" required>
+                                    <option value="">Select type...</option>
+                                    <option value="AC">AC</option>
+                                    <option value="Non-AC">Non-AC</option>
+                                    <option value="Deluxe">Deluxe</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="roomPrice">Price (₹/night)</label>
+                                <input type="number" id="roomPrice" placeholder="e.g. 3500" min="1" required>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-primary" id="addRoomBtn">➕ Add Room</button>
+                    </form>
+                </div>
+                {% endif %}
+
+                <!-- Filter & Search -->
+                <div class="flex-between mb-24">
+                    <div class="filter-bar">
+                        <select id="filterType" onchange="loadRooms()">
+                            <option value="all">All Types</option>
+                            <option value="AC">AC</option>
+                            <option value="Non-AC">Non-AC</option>
+                            <option value="Deluxe">Deluxe</option>
+                        </select>
+                        <select id="filterStatus" onchange="loadRooms()">
+                            <option value="all">All Status</option>
+                            <option value="available">Available</option>
+                            <option value="booked">Booked</option>
+                            <option value="maintenance">Maintenance</option>
+                        </select>
+                        <input type="text" id="searchRoom" class="search-input" placeholder="🔍 Search room no..." oninput="loadRooms()">
+                    </div>
+                </div>
+
+                <!-- Rooms Table -->
+                <div class="glass-card">
+                    <div class="card-title"><span class="title-icon">🚪</span> All Rooms</div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Room No</th>
+                                    <th>Type</th>
+                                    <th>Price</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="roomsTableBody">
+                                <tr><td colspan="5" class="text-center" style="padding:36px;color:var(--text-muted)">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ╔═══════════════════════════════════════════╗ -->
+            <!-- ║  PAGE: BOOKINGS                           ║ -->
+            <!-- ╚═══════════════════════════════════════════╝ -->
+            <section id="page-bookings" class="page-section">
+
+                <!-- Booking Form -->
+                <div class="glass-card mb-24">
+                    <div class="card-title"><span class="title-icon">🎫</span> New Booking</div>
+                    <form id="bookingForm" onsubmit="createBooking(event)">
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="customerName">Guest Name</label>
+                                <input type="text" id="customerName" placeholder="Full name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="customerPhone">Phone</label>
+                                <input type="tel" id="customerPhone" placeholder="e.g. 9876543210" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="bookRoomNo">Available Room</label>
+                                <select id="bookRoomNo" required>
+                                    <option value="">Select a room...</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="checkIn">Check-In</label>
+                                <input type="date" id="checkIn" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="checkOut">Check-Out</label>
+                                <input type="date" id="checkOut" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="idProof">ID Proof (Aadhaar / License / Passport)</label>
+                                <div class="file-input-wrapper">
+                                    <input type="file" id="idProof" accept=".png,.jpg,.jpeg,.pdf,.webp">
+                                </div>
+                            </div>
+                        </div>
+                        <button type="submit" class="btn btn-success" id="bookBtn">✅ Confirm Booking</button>
+                    </form>
+                </div>
+
+                <!-- Active Bookings -->
+                <div class="glass-card">
+                    <div class="card-title"><span class="title-icon">📋</span> Active Bookings</div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Guest</th>
+                                    <th>Phone</th>
+                                    <th>Room</th>
+                                    <th>Check In</th>
+                                    <th>Check Out</th>
+                                    <th>ID Proof</th>
+                                    <th>Booked At</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="bookingsTableBody">
+                                <tr><td colspan="8" class="text-center" style="padding:36px;color:var(--text-muted)">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ╔═══════════════════════════════════════════╗ -->
+            <!-- ║  PAGE: HISTORY                            ║ -->
+            <!-- ╚═══════════════════════════════════════════╝ -->
+            <section id="page-history" class="page-section">
+                <div class="glass-card">
+                    <div class="card-title"><span class="title-icon">📜</span> Booking History (Completed)</div>
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Guest</th>
+                                    <th>Phone</th>
+                                    <th>Room</th>
+                                    <th>Type</th>
+                                    <th>Price</th>
+                                    <th>Stay</th>
+                                    <th>Checked Out</th>
+                                    <th>Receipt</th>
+                                </tr>
+                            </thead>
+                            <tbody id="historyTableBody">
+                                <tr><td colspan="8" class="text-center" style="padding:36px;color:var(--text-muted)">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+
+            <!-- ╔═══════════════════════════════════════════╗ -->
+            <!-- ║  PAGE: ANALYTICS (Admin)                  ║ -->
+            <!-- ╚═══════════════════════════════════════════╝ -->
+            {% if role == 'admin' %}
+            <section id="page-analytics" class="page-section">
+                <div class="charts-grid">
+                    <div class="glass-card">
+                        <div class="card-title"><span class="title-icon">🏷️</span> Room Types</div>
+                        <div class="chart-container">
+                            <canvas id="chartRoomTypes"></canvas>
+                        </div>
+                    </div>
+                    <div class="glass-card">
+                        <div class="card-title"><span class="title-icon">📊</span> Room Status</div>
+                        <div class="chart-container">
+                            <canvas id="chartRoomStatus"></canvas>
+                        </div>
+                    </div>
+                    <div class="glass-card">
+                        <div class="card-title"><span class="title-icon">💰</span> Revenue by Room Type</div>
+                        <div class="chart-container">
+                            <canvas id="chartRevenue"></canvas>
+                        </div>
+                    </div>
+                    <div class="glass-card">
+                        <div class="card-title"><span class="title-icon">📈</span> Monthly Bookings</div>
+                        <div class="chart-container">
+                            <canvas id="chartMonthly"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </section>
+            {% endif %}
+
+        </main>
+    </div>
+
+
+    <!-- ═══ EDIT ROOM MODAL ═══ -->
+    {% if role == 'admin' %}
+    <div id="editModal" class="modal-overlay" onclick="if(event.target===this)closeEditModal()">
+        <div class="modal">
+            <div class="modal-header">
+                <h3>✏️ Edit Room</h3>
+                <button class="modal-close" onclick="closeEditModal()">✕</button>
+            </div>
+            <form onsubmit="updateRoom(event)">
+                <div class="form-grid" style="grid-template-columns:1fr 1fr;">
+                    <div class="form-group">
+                        <label for="editRoomNo">Room Number</label>
+                        <input type="text" id="editRoomNo" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editRoomType">Room Type</label>
+                        <select id="editRoomType" required>
+                            <option value="AC">AC</option>
+                            <option value="Non-AC">Non-AC</option>
+                            <option value="Deluxe">Deluxe</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editRoomPrice">Price (₹/night)</label>
+                        <input type="number" id="editRoomPrice" min="1" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editRoomStatus">Status</label>
+                        <select id="editRoomStatus" required>
+                            <option value="available">Available</option>
+                            <option value="booked">Booked</option>
+                            <option value="maintenance">Maintenance</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-ghost" onclick="closeEditModal()">Cancel</button>
+                    <button type="submit" class="btn btn-primary" id="editSubmitBtn">💾 Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    {% endif %}
+
+</div><!-- /appRoot -->
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+<script>
+    // Set initial page based on role
+    document.addEventListener('DOMContentLoaded', () => {
+        const role = '{{ role }}';
+        userRole = role;
+        if (role === 'admin') {
+            navigateTo('dashboard');
+        } else {
+            navigateTo('rooms');
+        }
+    });
+</script>
+
+</body>
+</html>
